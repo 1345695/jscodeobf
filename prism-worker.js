@@ -1,0 +1,1 @@
+self.Prism={manual:!0,disableWorkerMessageHandler:!0},importScripts("prism.min.js"),self.onmessage=r=>{const e=r.data;if(!e||typeof e.code!="string")return;let s;try{s=self.Prism.highlight(e.code,self.Prism.languages.javascript,"javascript")}catch{s=e.code.replace(/[&<>]/g,t=>({"&":"&amp;","<":"&lt;",">":"&gt;"})[t])}self.postMessage({id:e.id,html:s})};
