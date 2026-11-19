@@ -621,7 +621,7 @@ const concurrentDnsResolve = async (hostname, recordType) => {
                             t.qn = a + e.length;
                             for (let c = 0; c < i.length; c++) {
                                 const l = i[c], h = e[c].type;
-                                if (h === 23) t.pq.push(l); else if (h === 21) t.pa(l); else if (h === 22) for (t.hp.feed(l); t.hp.next();) ;
+                                if (h === 23) l.byteLength && t.pq.push(l); else if (h === 21) t.pa(l); else if (h === 22) for (t.hp.feed(l); t.hp.next();) ;
                             }
                         }
                         if (t.pq.length) return t.pq.length === 1 ? t.pq.pop() : d(...t.pq.splice(0));
@@ -645,7 +645,7 @@ const concurrentDnsResolve = async (hostname, recordType) => {
         }
         async p13({data: t, type: e}) {
             if (e === 23) {
-                this.pq.push(t);
+                t.byteLength && this.pq.push(t);
             } else if (e === 21) {
                 this.pa(t);
             } else if (e === 22) {
@@ -1799,10 +1799,11 @@ const connectProxyIp = async (param, limit, txt) => {
 `,pipe_and_queue:`const manualPipe = async (readable, writable, close) => {
     const safeBufferSize = bufferSize - maxChunkLen, checkInterval = wsHighWaterMark >> 1;
     let bufferView = new Uint8Array(bufferSize), spareBuffer = new ArrayBuffer(maxChunkLen);
-    let offset = 0, transferred = checkInterval, timerId = null, done, value;
+    let offset = 0, transferred = checkInterval, timerId = null, isReading = false, needsFlush = false, protectFlush = false, done, value;
     const flushBuffer = () => {
-        if (offset > 0) (writable.send(bufferView.subarray(0, offset)), offset = 0);
-        timerId && (clearTimeout(timerId), timerId = null);
+        if (isReading) return needsFlush = true;
+        if (offset > 0) (writable.send(bufferView.subarray(0, offset)), transferred += offset, offset = 0);
+        needsFlush = false, protectFlush = false, timerId && (clearTimeout(timerId), timerId = null);
     };
     const reader = readable.getReader({mode: 'byob'});
     try {
@@ -1814,19 +1815,19 @@ const connectProxyIp = async (param, limit, txt) => {
                     await scheduler.wait(4);
                 }
             }
-            if (offset > 0) {
+            if (offset > 0 && protectFlush) {
                 ({done, value} = await reader.read(new Uint8Array(spareBuffer, 0, maxChunkLen)));
                 bufferView.set(value, offset), spareBuffer = value.buffer;
             } else {
+                isReading = offset > 0;
                 ({done, value} = await reader.read(new Uint8Array(bufferView.buffer, offset, maxChunkLen)));
-                bufferView = new Uint8Array(value.buffer);
+                isReading = false, bufferView = new Uint8Array(value.buffer);
             }
             if (done) break;
-            offset += value.byteLength, transferred += value.byteLength;
-            timerId ||= setTimeout(flushBuffer, 2);
-            offset > safeBufferSize && flushBuffer();
+            const chunkLen = value.byteLength;
+            offset += chunkLen, needsFlush || offset > safeBufferSize ? flushBuffer() : (protectFlush = chunkLen < maxChunkLen, timerId ||= setTimeout(flushBuffer, 2));
         }
-    } catch {offset = 0, close?.()} finally {flushBuffer()}
+    } catch {offset = 0, close?.()} finally {isReading = false, flushBuffer()}
 };
 const createBufferedTcpWriter = (tcpWriter, close) => {
     const buffer = new Uint8Array(32768);
@@ -1959,7 +1960,7 @@ const createAsyncMicrotaskQueue = (consume, close) => {
     const close = () => {webSocket.close(1011, 'WebSocket is closed')};
     const process = (chunk) => {
         if (state.tcpWriter) return state.tcpWriter(chunk);
-        return handleSession(earlyData ? chunk : new Uint8Array(chunk), state, request, webSocket, close, earlyData !== null);
+        return handleSession(chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk), state, request, webSocket, close, earlyData !== null);
     };
     processingQueue = createAsyncMicrotaskQueue(process, close);
     if (earlyData) processingQueue(earlyData);
